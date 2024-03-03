@@ -1,0 +1,250 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class RobotController : MonoBehaviour
+{
+    // naming constraints do not change
+    [SerializeField] private WheelCollider WCFrontLeft;
+    [SerializeField] private WheelCollider WCFrontRight;
+    [SerializeField] private WheelCollider WCBackLeft;
+    [SerializeField] private WheelCollider WCBackRight;
+
+    [SerializeField] private Transform WTFrontLeft;
+    [SerializeField] private Transform WTFrontRight;
+    [SerializeField] private Transform WTBackLeft;
+    [SerializeField] private Transform WTBackRight;
+
+    [SerializeField] private Transform RCFR;
+    [SerializeField] private Transform RCL1;
+    [SerializeField] private Transform RCL2;
+    [SerializeField] private Transform RCL3;
+    [SerializeField] private Transform RCR1;
+    [SerializeField] private Transform RCR2;
+    [SerializeField] private Transform RCR3;
+    [SerializeField] private Transform AGOR;
+
+    private float CarMaximumSteeringAngle;
+    private float MotorAcceleration;
+    private float CarBreak;
+    private float CarSpeed;
+    private float CarSteerAngle;
+    private bool CarIsBreaking;
+
+    private Rigidbody rb;
+    private float angle_x;
+    private float angle_y;
+    private float angle_z;
+
+    private float sen1dist = 11.0f;
+    private float sen2dist = 8.0f;
+    private float sen3dist = 14.0f;
+
+    private float senFdist = 3.5f;
+
+    private float senFRx = 20;
+    private float senFRy = 20;
+    private float senFRz = 20;
+
+    private float sen1x = 0; private float sen1y = 15; private float sen1z = 0;
+    private float sen2x = 0; private float sen2y = 35; private float sen2z = 0;
+    private float sen3x = 11; private float sen3y = 50; private float sen3z = 0;
+
+    private float ElapsedTime = 0f;
+
+    private void Start()
+    {
+        rb = GetComponent<Rigidbody>();
+        
+        AdjustSensors(RCFR, 20, 0, 0);
+
+        AdjustSensors(RCL1, sen1x, -sen1y, sen1z);
+        AdjustSensors(RCL2, sen2x, -sen2y, sen2x);
+        AdjustSensors(RCL3, sen3x, -sen3y, sen3z);
+
+        AdjustSensors(RCR1, sen1x, sen1y, sen1z);
+        AdjustSensors(RCR2, sen2x, sen2y, sen2z);
+        AdjustSensors(RCR3, sen3x, sen3y, sen3z);
+
+        AdjustSensors(AGOR, 50, 180, 0);
+        CarSpeed = 2;
+        MotorAcceleration = 50;
+        CarMaximumSteeringAngle = 40;
+    }
+
+    private void FixedUpdate()
+    {
+        AvoidRoadSide();
+        AvoidObstacles();
+        MaintainCarSpeedWithAngle();
+        MoveCar();
+        UpdateCarWheels();
+
+        CalculateTime();
+
+        angle_x = AGOR.eulerAngles.x;
+        angle_y = AGOR.eulerAngles.y;
+        angle_z = AGOR.eulerAngles.z;
+
+        CarSpeed = rb.velocity.magnitude;
+
+    }
+
+
+
+    private void CalculateTime()
+    {
+        ElapsedTime += Time.deltaTime;
+        Debug.Log("Elapsed Time (in seconds): " + ElapsedTime);
+    }
+
+    private void AdjustSensors(Transform sensor, float x_angle, float y_angle, float z_angle)
+    {
+        sensor.transform.Rotate(x_angle, y_angle, z_angle);
+    }
+
+
+    private void MoveCar()
+    {
+        WCFrontLeft.motorTorque = MotorAcceleration;
+        WCFrontRight.motorTorque = MotorAcceleration;
+        WCBackLeft.motorTorque = MotorAcceleration;
+        WCBackRight.motorTorque = MotorAcceleration;
+
+
+        CarBreak = CarIsBreaking ? 500f : 0f;
+
+        WCFrontLeft.brakeTorque = CarBreak;
+        WCFrontRight.brakeTorque = CarBreak;
+        WCBackLeft.brakeTorque = CarBreak;
+        WCBackRight.brakeTorque = CarBreak;
+
+    }
+
+    private void UpdateCarWheels()
+    {
+        UpdateCarWheelPosition(WCFrontLeft, WTFrontLeft);
+        UpdateCarWheelPosition(WCFrontRight, WTFrontRight);
+        UpdateCarWheelPosition(WCBackLeft, WTBackLeft);
+        UpdateCarWheelPosition(WCBackRight, WTBackRight);
+
+    }
+    private void UpdateCarWheelPosition(WheelCollider wheelCollider, Transform trans)
+    {
+        Vector3 pos;
+        Quaternion rot;
+        wheelCollider.GetWorldPose(out pos, out rot);
+        trans.rotation = rot;
+        trans.position = pos;
+
+    }
+
+    private void TurnCarSteering(float direction)
+    {
+        CarSteerAngle = CarMaximumSteeringAngle * direction;
+        WCFrontLeft.steerAngle = CarSteerAngle;
+        WCFrontRight.steerAngle = CarSteerAngle;
+    }
+
+
+    private bool senseRoad(Transform sensor, float dist)
+    {
+        if (Physics.Raycast(sensor.position, sensor.TransformDirection(Vector3.forward), dist, 1 << 9))
+        {
+            Debug.DrawRay(sensor.position, sensor.TransformDirection(Vector3.forward) * dist, Color.yellow);
+            return true;
+        }
+        else
+        {
+            Debug.DrawRay(sensor.position, sensor.TransformDirection(Vector3.forward) * dist, Color.white);
+            return false;
+        }
+    }
+
+
+
+    private bool senseObstacle(Transform sensor, float dist)
+    {
+        if (Physics.Raycast(sensor.position, sensor.TransformDirection(Vector3.forward), dist, 1 << 10))
+        {
+            Debug.DrawRay(sensor.position, sensor.TransformDirection(Vector3.forward) * dist, Color.yellow);
+            return true;
+        }
+        else
+        {
+            Debug.DrawRay(sensor.position, sensor.TransformDirection(Vector3.forward) * dist, Color.white);
+            return false;
+        }
+    }
+  
+    private void AvoidRoadSide()
+    {
+        if (senseRoad(RCFR, senFdist))
+            {
+                if (!senseRoad(RCR3, sen3dist) || !senseRoad(RCL3, sen3dist))
+                {
+                    if(!senseRoad(RCR3, sen3dist))
+                    {
+                        CarMaximumSteeringAngle = 35;
+                        TurnCarSteering(-1);
+                    }
+                    if(!senseRoad(RCL3, sen3dist))
+                    {
+                        CarMaximumSteeringAngle = 35;
+                        TurnCarSteering(1);
+                    }
+
+                }
+                else
+                {
+                    TurnCarSteering(0);
+                }
+            }
+            else
+            {
+                TurnCarSteering(0);
+            }
+    }
+
+
+
+    private void AvoidObstacles()
+    {
+        if (senseObstacle(RCL1, sen1dist) || senseObstacle(RCL2, sen2dist))
+        {
+            TurnCarSteering(1);
+        }
+
+        if (senseObstacle(RCR1, sen1dist) || senseObstacle(RCR2, sen2dist))
+        {
+            TurnCarSteering(-1);
+        }
+    }
+
+
+    private void MaintainCarSpeedWithAngle()
+    {
+        if (CarSpeed < 3 & MotorAcceleration < 9000)
+        {
+            MotorAcceleration = MotorAcceleration + 10.0f;
+        }
+        if (CarSpeed > 6 & MotorAcceleration > 0)
+        {
+            MotorAcceleration = MotorAcceleration - 20.0f;
+        }
+        if (angle_x < 40)
+        {
+            if (CarSpeed < 2 & MotorAcceleration < 9000)
+            {
+                MotorAcceleration = MotorAcceleration + 10.0f;
+            }
+            if (CarSpeed > 4)
+            {
+                MotorAcceleration = MotorAcceleration - 5.0f;
+            }
+        }
+    }
+
+
+}
